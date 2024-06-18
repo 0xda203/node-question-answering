@@ -1,127 +1,94 @@
 import path from "path";
 import {
+  Tokenizer as BaseTokenizer,
   AddedToken,
-  ByteLevelBPETokenizer,
+  robertaProcessing,
   Encoding,
-  getTokenContent,
-  PaddingConfiguration,
-  Token
+  byteLevelPreTokenizer,
+  BPE
 } from "tokenizers";
-import { robertaProcessing } from "tokenizers/bindings/post-processors";
-
 import { exists } from "../utils";
 import { FullTokenizerOptions, Tokenizer } from "./tokenizer";
 
 export interface RobertaTokenizerOptions {
-  clsToken: Token;
-  eosToken: Token;
-  maskToken: Token;
-  padToken: Token;
-  unkToken: Token;
+  clsToken: string;
+  eosToken: string;
+  maskToken: string;
+  padToken: string;
+  unkToken: string;
 }
 
-export class RobertaTokenizer extends Tokenizer<ByteLevelBPETokenizer> {
-  private readonly clsToken: Token;
-  private readonly eosToken: Token;
-  private readonly maskToken: Token;
-  private readonly padToken: Token;
-  private readonly unkToken: Token;
+export class RobertaTokenizer extends Tokenizer {
+  private readonly eosToken: string;
+  private readonly padToken: string;
 
-  constructor(tokenizer: ByteLevelBPETokenizer, options: RobertaTokenizerOptions) {
+  constructor(tokenizer: BaseTokenizer, options: RobertaTokenizerOptions) {
     super(tokenizer);
-
-    this.clsToken = options.clsToken;
     this.eosToken = options.eosToken;
-    this.maskToken = options.maskToken;
     this.padToken = options.padToken;
-    this.unkToken = options.unkToken;
   }
 
   static async fromOptions(
     options: FullTokenizerOptions<RobertaTokenizerOptions>
   ): Promise<RobertaTokenizer> {
-    let vocabFile = options.vocabFile;
+    const vocabPath = path.join(options.filesDir, options.vocabFile || "vocab.json");
+    const mergesPath = path.join(options.filesDir, options.mergesFile || "merges.txt");
 
-    if (!vocabFile) {
-      const fullPath = path.join(options.filesDir, "vocab.json");
-      if (await exists(fullPath)) {
-        vocabFile = fullPath;
-      }
-
-      if (!vocabFile) {
-        throw new Error(
-          "Unable to find a vocab file. Make sure to provide its path in the options"
-        );
-      }
+    if (!(await exists(vocabPath))) {
+      throw new Error("Unable to find a vocab file. Make sure to provide its path in the options");
     }
 
-    let mergesFile = options.mergesFile;
-    if (!mergesFile) {
-      const fullPath = path.join(options.filesDir, "merges.txt");
-      if (await exists(fullPath)) {
-        mergesFile = fullPath;
-      }
-
-      if (!mergesFile) {
-        throw new Error(
-          "Unable to find a merges file. Make sure to provide its path in the options"
-        );
-      }
+    if (!(await exists(mergesPath))) {
+      throw new Error("Unable to find a merges file. Make sure to provide its path in the options");
     }
 
-    const tokenizer = await ByteLevelBPETokenizer.fromOptions({
-      addPrefixSpace: true,
-      mergesFile,
-      vocabFile
+    const model = await BPE.fromFile(vocabPath, mergesPath, {
+      unkToken: options.unkToken || "<unk>"
     });
 
-    const clsToken = options.clsToken ?? "<s>";
-    const eosToken = options.eosToken ?? "</s>";
-    const maskToken =
-      options.maskToken ?? new AddedToken("<mask>", true, { leftStrip: true });
-    const padToken = options.padToken ?? "<pad>";
-    const unkToken = options.unkToken ?? "<unk>";
+    const tokenizer = new BaseTokenizer(model);
 
-    const eosString = getTokenContent(eosToken);
-    const clsString = getTokenContent(clsToken);
-    const postProcessor = robertaProcessing(
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      [eosString, tokenizer.tokenToId(eosString)!],
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      [clsString, tokenizer.tokenToId(clsString)!]
-    );
+    tokenizer.setPreTokenizer(byteLevelPreTokenizer(true));
 
-    tokenizer.setPostProcessor(postProcessor);
-    tokenizer.addSpecialTokens([clsToken, eosToken, maskToken, padToken, unkToken]);
+    const specialTokens = [
+      new AddedToken(options.clsToken || "<s>", true),
+      new AddedToken(options.eosToken || "</s>", true),
+      new AddedToken(options.maskToken || "<mask>", true),
+      new AddedToken(options.padToken || "<pad>", true),
+      new AddedToken(options.unkToken || "<unk>", true)
+    ];
+    tokenizer.addSpecialTokens(specialTokens.map(token => token.getContent()));
+
+    const eosId = tokenizer.tokenToId(options.eosToken || "</s>");
+    const clsId = tokenizer.tokenToId(options.clsToken || "<s>");
+    if (eosId === null || clsId === null) {
+      throw new Error("CLS or EOS tokens are not part of the vocabulary.");
+    }
+    tokenizer.setPostProcessor(robertaProcessing([options.eosToken || "</s>", eosId], [options.clsToken || "<s>", clsId]));
 
     return new RobertaTokenizer(tokenizer, {
-      clsToken,
-      eosToken,
-      maskToken,
-      padToken,
-      unkToken
+      clsToken: options.clsToken || "<s>",
+      eosToken: options.eosToken || "</s>",
+      maskToken: options.maskToken || "<mask>",
+      padToken: options.padToken || "<pad>",
+      unkToken: options.unkToken || "<unk>"
     });
   }
 
   getQuestionLength(encoding: Encoding): number {
-    return encoding.tokens.indexOf(getTokenContent(this.eosToken)) - 1; // Take cls token into account
+    const eosTokenIndex = encoding.getTokens().indexOf(this.eosToken);
+    return eosTokenIndex !== -1 ? eosTokenIndex - 1 : 0;
   }
 
   getContextStartIndex(encoding: Encoding): number {
-    return this.getQuestionLength(encoding) + 3;
+    return this.getQuestionLength(encoding) + 2;
   }
 
-  /**
-   * Enable/change padding with specified options
-   * @param maxLength Padding length
-   * @override
-   */
-  setPadding(maxLength: number): Readonly<PaddingConfiguration> {
-    const padToken = getTokenContent(this.padToken);
-    return this.tokenizer.setPadding({
-      maxLength,
-      padToken: padToken,
-      padId: this.tokenizer.tokenToId(padToken)
-    });
+  setPadding(maxLength: number): void {
+    const padId = this.tokenizer.tokenToId(this.padToken);
+    if (padId === null) {
+      throw new Error("Pad token must be part of the vocabulary.");
+    }
+    this.tokenizer.setPadding({ maxLength, padId, padToken: this.padToken });
   }
 }

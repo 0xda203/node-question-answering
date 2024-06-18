@@ -19,7 +19,8 @@
   "types": "./dist/index.d.ts",
   "bin": "./cli.js",
   "dependencies": {
-    "@tensorflow/tfjs-node": "^2.0.1",
+    "@tensorflow/tfjs-node": "^3.11.0",
+    "@tensorflow/tfjs-core": "^3.11.0",
     "@types/node": "^13.5.0",
     "@types/node-fetch": "^2.5.4",
     "@types/progress": "^2.0.3",
@@ -29,7 +30,7 @@
     "progress": "^2.0.3",
     "shelljs": "^0.8.3",
     "tar": "^5.0.5",
-    "tokenizers": "^0.7.0",
+    "tokenizers": "^0.13.3",
     "yargs": "^15.1.0"
   },
   "devDependencies": {
@@ -51,10 +52,12 @@
     "dev": "rm -rf dist && npx tsc",
     "test": "jest",
     "lint": "eslint --fix --ext .js,.ts src scripts",
-    "lint-check": "eslint --ext .js,.ts src scripts"
+    "lint-check": "eslint --ext .js,.ts src scripts",
+    "build": "tsc",
+    "prepare": "npm run build"
   },
   "engines": {
-    "node": ">=10 < 11 || >=12 <14"
+    "node": ">=14"
   },
   "author": "Pierric Cistac <pierric@huggingface.co>",
   "license": "Apache-2.0"

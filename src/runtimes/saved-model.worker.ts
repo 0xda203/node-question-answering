@@ -8,8 +8,7 @@ import { InferenceMessage, InitMessage } from "./worker-message";
 interface InferenceTask {
   id: number;
   model: string;
-  onsuccess: (value?: [Logits, Logits] | PromiseLike<[Logits, Logits]>) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onsuccess: (value: [Logits, Logits] | PromiseLike<[Logits, Logits]>) => void; // Adjusted type here
   onerror: (reason?: any) => void;
   inputs: {
     ids: number[][];
@@ -21,7 +20,6 @@ interface InferenceTask {
 interface ModelInfos {
   loaded: boolean;
   onloaded?: () => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onloaderror?: (error: any) => void;
 }
 

@@ -118,7 +118,7 @@ export class QAClient {
     });
 
     const encoding = await this.tokenizer.encode(question, context);
-    const encodings = [encoding, ...encoding.overflowing];
+    const encodings = [encoding, ...encoding.getOverflowing()];
 
     const spans: Span[] = encodings.map((e, i) => ({
       startIndex: (this.model.inputLength - stride) * i,
@@ -199,7 +199,7 @@ export class QAClient {
     }
 
     const answer = answers.sort((a, b) => b.score - a.score)[0];
-    const offsets = answer.feature.encoding.offsets;
+    const offsets = answer.feature.encoding.getOffsets();
 
     const answerText = slice(
       context,

@@ -1,9 +1,7 @@
 import {
-  BaseTokenizer,
   Encoding,
-  PaddingConfiguration,
-  TruncationConfiguration,
-  TruncationOptions
+  TruncationOptions,
+  Tokenizer as BaseTokenizer
 } from "tokenizers";
 
 import { ModelType } from "../models";
@@ -31,11 +29,15 @@ export interface TokenizerBaseOptions {
   vocabFile?: string;
 }
 
-export type FullTokenizerOptions<TokSpecificOptions> = TokenizerBaseOptions &
+export type FullTokenizerOptions<TokSpecificOptions> = TokenizerBaseOptions & 
   Partial<TokSpecificOptions>;
 
-export abstract class Tokenizer<T extends BaseTokenizer<object> = BaseTokenizer<object>> {
-  constructor(protected tokenizer: T) {}
+export abstract class Tokenizer<T extends BaseTokenizer = BaseTokenizer> {
+  protected tokenizer: T;
+
+  constructor(tokenizer: T) {
+    this.tokenizer = tokenizer;
+  }
 
   abstract getQuestionLength(encoding: Encoding): number;
 
@@ -47,8 +49,8 @@ export abstract class Tokenizer<T extends BaseTokenizer<object> = BaseTokenizer<
    * @virtual
    */
   getContextEndIndex(encoding: Encoding): number {
-    const nbAddedTokens = encoding.specialTokensMask.reduce((acc, val) => acc + val, 0);
-    const actualLength = encoding.length - nbAddedTokens;
+    const nbAddedTokens = encoding.getSpecialTokensMask().reduce((acc, val) => acc + val, 0);
+    const actualLength = encoding.getLength() - nbAddedTokens;
     const contextLength = actualLength - this.getQuestionLength(encoding);
 
     return this.getContextStartIndex(encoding) + contextLength - 1;
@@ -63,14 +65,14 @@ export abstract class Tokenizer<T extends BaseTokenizer<object> = BaseTokenizer<
    * @param maxLength Padding length
    * @virtual
    */
-  setPadding(maxLength: number): Readonly<PaddingConfiguration> {
-    return this.tokenizer.setPadding({ maxLength });
+  setPadding(maxLength: number) {
+    this.tokenizer.setPadding({ maxLength });
   }
 
   setTruncation(
     maxLength: number,
     options?: TruncationOptions
-  ): Readonly<TruncationConfiguration> {
-    return this.tokenizer.setTruncation(maxLength, options);
+  ) {
+    this.tokenizer.setTruncation(maxLength, options);
   }
 }

@@ -1,65 +1,61 @@
 import path from "path";
-import {
-  BertWordPieceOptions,
-  BertWordPieceTokenizer,
-  Encoding,
-  getTokenContent,
-  Token
-} from "tokenizers";
-
-import { DEFAULT_VOCAB_PATH } from "../qa-options";
-import { exists } from "../utils";
+import { Tokenizer as BaseTokenizer, Encoding, AddedToken, WordPiece } from "tokenizers";
 import { FullTokenizerOptions, Tokenizer } from "./tokenizer";
+import { exists } from "../utils";
+import { DEFAULT_VOCAB_PATH } from "../qa-options";
 
 export interface BertTokenizerOptions {
-  clsToken: Token;
-  maskToken: Token;
-  padToken: Token;
-  sepToken: Token;
-  unkToken: Token;
+  clsToken: string;
+  maskToken: string;
+  padToken: string;
+  sepToken: string;
+  unkToken: string;
 }
 
-export class BertTokenizer extends Tokenizer<BertWordPieceTokenizer> {
+export class BertTokenizer extends Tokenizer {
+  private readonly sepToken: string;
+
+  constructor(tokenizer: BaseTokenizer, options: BertTokenizerOptions) {
+    super(tokenizer);
+    this.sepToken = options.sepToken;
+  }
+
   static async fromOptions(
     options: FullTokenizerOptions<BertTokenizerOptions>
   ): Promise<BertTokenizer> {
-    let vocabPath = options.vocabFile;
-    if (!vocabPath) {
-      const fullPath = path.join(options.filesDir, "vocab.txt");
-      if (await exists(fullPath)) {
-        vocabPath = fullPath;
-      }
+    let vocabPath = options.vocabFile || path.join(options.filesDir, "vocab.txt");
 
-      vocabPath = vocabPath ?? DEFAULT_VOCAB_PATH;
+    if (!(await exists(vocabPath))) {
+      vocabPath = DEFAULT_VOCAB_PATH;
     }
 
-    const tokenizerOptions: BertWordPieceOptions = {
-      vocabFile: vocabPath,
-      lowercase: options.lowercase
-    };
+    const model = await WordPiece.fromFile(vocabPath, {
+      unkToken: options.unkToken || "[UNK]",
+      continuingSubwordPrefix: "##",
+      maxInputCharsPerWord: 100
+    });
 
-    const tokens: (keyof BertTokenizerOptions)[] = [
-      "clsToken",
-      "maskToken",
-      "padToken",
-      "sepToken",
-      "unkToken"
-    ];
+    const tokenizer = new BaseTokenizer(model);
+    
+    const specialTokens = [
+      new AddedToken(options.clsToken || "", true),
+      options.clsToken || "",
+      options.maskToken || "",
+      options.padToken || "",
+      options.sepToken || "",
+      options.unkToken || ""
+    ].filter(Boolean);
+    tokenizer.addTokens(specialTokens.map(token => typeof token === "string" ? token : token.getContent()));
 
-    for (const token of tokens) {
-      if (options[token]) {
-        tokenizerOptions[token] = options[token];
-      }
-    }
-
-    const tokenizer = await BertWordPieceTokenizer.fromOptions(tokenizerOptions);
-    return new BertTokenizer(tokenizer);
+    return new BertTokenizer(tokenizer, options as BertTokenizerOptions);
   }
 
   getQuestionLength(encoding: Encoding): number {
-    return (
-      encoding.tokens.indexOf(getTokenContent(this.tokenizer.configuration.sepToken)) - 1 // Take cls token into account
-    );
+    const sepTokenIndex = encoding.getTokens().indexOf(this.sepToken);
+    if (sepTokenIndex === -1) {
+      return 0;
+    }
+    return sepTokenIndex - 1;
   }
 
   getContextStartIndex(encoding: Encoding): number {

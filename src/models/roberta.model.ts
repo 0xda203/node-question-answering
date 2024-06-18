@@ -12,8 +12,8 @@ export class RobertaModel extends Model {
 
   runInference(encodings: Encoding[]): Promise<[Logits, Logits]> {
     return this.runtime.runInference(
-      encodings.map(e => e.ids),
-      encodings.map(e => e.attentionMask)
+      encodings.map(e => e.getIds()),
+      encodings.map(e => e.getAttentionMask()),
     );
   }
 }
